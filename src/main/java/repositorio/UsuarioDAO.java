@@ -1,0 +1,472 @@
+package repositorio;
+
+import excepciones.ElementoNoEncontradoException;
+import modelo.Cliente;
+import modelo.Conductor;
+import modelo.Usuario;
+import modelo.Administrador;
+import enums.TipoUsuario;
+import persistencia.ConexionDB;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+
+import excepciones.AccesoDatosException;
+
+public class UsuarioDAO implements DAO<Usuario>{
+
+    @Override
+    public void insertar(Usuario usuario) throws SQLException {
+
+        String sqlInsertarUsuario = "INSERT INTO usuarios " + "(nombre,apellido,dni,email,telefono,password,activo,calificacion_promedio,cantidad_calificaciones,tipo_usuario,numero_licencia) " +
+               "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?)";
+
+        try(Connection conexion = ConexionDB.obtenerConexion();
+            PreparedStatement ps = conexion.prepareStatement(
+                    sqlInsertarUsuario,PreparedStatement.RETURN_GENERATED_KEYS)){
+
+            ps.setString(1, usuario.getNombre());
+            ps.setString(2, usuario.getApellido());
+            ps.setString(3, usuario.getDni());
+            ps.setString(4, usuario.getEmail());
+            ps.setString(5, usuario.getTelefono());
+            ps.setString(6, usuario.getPassword());
+            ps.setBoolean(7, usuario.isActivo());
+            ps.setDouble(8, usuario.getCalificacionPromedio());
+            ps.setInt(9, usuario.getCantidadCalificaciones());
+            ps.setString(10, usuario.getTipoUsuario().name());
+
+            if (usuario instanceof Conductor) {
+                Conductor conductor = (Conductor) usuario;
+                ps.setString(11, conductor.getNumeroLicencia());
+            } else {
+                ps.setNull(11, java.sql.Types.VARCHAR);
+            }
+
+            int filasInsertadas = ps.executeUpdate();
+
+            if (filasInsertadas > 0) {
+                try (ResultSet resultado = ps.getGeneratedKeys()) {
+                    if (resultado.next()) {
+                        usuario.asignarIdUsuario(resultado.getInt(1));
+                    }
+                }
+            }
+        } catch (SQLException e){
+            if (e.getErrorCode() == 1062) {
+                throw new AccesoDatosException(
+                        "El DNI o el email ya se encuentran registrados", e);
+            }
+
+            throw e;
+
+        }
+    }
+
+
+    @Override
+    public List<Usuario> listarTodos() throws SQLException {
+
+        List<Usuario> usuarios = new ArrayList<>();
+
+        String sqlListarUsuarios =
+                "SELECT * FROM usuarios";
+
+        try (Connection conexion = ConexionDB.obtenerConexion();
+             PreparedStatement ps = conexion.prepareStatement(sqlListarUsuarios);
+             ResultSet resultado = ps.executeQuery()) {
+
+            while (resultado.next()) {
+
+                TipoUsuario tipo = TipoUsuario.valueOf(
+                        resultado.getString("tipo_usuario")
+                );
+
+                Usuario usuario;
+
+                switch (tipo) {
+                    case CLIENTE:
+                        usuario = new Cliente(
+                                resultado.getString("nombre"),
+                                resultado.getString("apellido"),
+                                resultado.getString("dni"),
+                                resultado.getString("email"),
+                                resultado.getString("telefono"),
+                                resultado.getString("password")
+                        );
+                        break;
+
+                    case ADMINISTRADOR:
+                        usuario = new Administrador(
+                                resultado.getString("nombre"),
+                                resultado.getString("apellido"),
+                                resultado.getString("dni"),
+                                resultado.getString("email"),
+                                resultado.getString("telefono"),
+                                resultado.getString("password")
+                        );
+                        break;
+
+                    case CONDUCTOR:
+                        usuario = new Conductor(
+                                resultado.getString("nombre"),
+                                resultado.getString("apellido"),
+                                resultado.getString("dni"),
+                                resultado.getString("email"),
+                                resultado.getString("telefono"),
+                                resultado.getString("password"),
+                                resultado.getString("numero_licencia"));
+
+                        break;
+
+                    default:
+                        throw new AccesoDatosException(
+                                "Tipo de usuario todavía no implementado: " + tipo
+                        );
+                }
+
+                usuario.asignarIdUsuario(resultado.getInt("id_usuario"));
+
+                usuario.cargarDatosPersistidos(
+                        resultado.getBoolean("activo"),
+                        resultado.getDouble("calificacion_promedio"),
+                        resultado.getInt("cantidad_calificaciones")
+                );
+
+                if (usuario instanceof Conductor) {
+                    Conductor conductor = (Conductor) usuario;
+                    conductor.setDisponible(resultado.getBoolean("disponible"));
+                }
+
+                usuarios.add(usuario);
+            }
+
+        } catch (SQLException e) {
+            throw new AccesoDatosException(
+                    "Error al listar los usuarios de la base de datos", e
+            );
+        }
+
+        return usuarios;
+    }
+
+
+    @Override
+    public Usuario buscarPorId(int id) throws SQLException {
+
+        String sql = "SELECT * FROM usuarios WHERE id_usuario = ?";
+
+        try (Connection conexion = ConexionDB.obtenerConexion();
+             PreparedStatement ps = conexion.prepareStatement(sql)) {
+
+            ps.setInt(1, id);
+
+            try (ResultSet resultado = ps.executeQuery()) {
+
+                if (resultado.next()) {
+
+                    TipoUsuario tipo = TipoUsuario.valueOf(
+                            resultado.getString("tipo_usuario")
+                    );
+
+                    Usuario usuario;
+
+                    switch (tipo) {
+                        case CLIENTE:
+                            usuario = new Cliente(
+                                    resultado.getString("nombre"),
+                                    resultado.getString("apellido"),
+                                    resultado.getString("dni"),
+                                    resultado.getString("email"),
+                                    resultado.getString("telefono"),
+                                    resultado.getString("password")
+                            );
+                            break;
+
+                        case ADMINISTRADOR:
+                            usuario = new Administrador(
+                                    resultado.getString("nombre"),
+                                    resultado.getString("apellido"),
+                                    resultado.getString("dni"),
+                                    resultado.getString("email"),
+                                    resultado.getString("telefono"),
+                                    resultado.getString("password")
+                            );
+                            break;
+
+                        case CONDUCTOR:
+                            usuario = new Conductor(
+                                    resultado.getString("nombre"),
+                                    resultado.getString("apellido"),
+                                    resultado.getString("dni"),
+                                    resultado.getString("email"),
+                                    resultado.getString("telefono"),
+                                    resultado.getString("password"),
+                                    resultado.getString("numero_licencia"));
+
+                            break;
+
+                        default:
+                            throw new AccesoDatosException(
+                                    "Tipo de usuario todavía no implementado: " + tipo
+                            );
+                    }
+
+                    usuario.asignarIdUsuario(
+                            resultado.getInt("id_usuario")
+                    );
+
+                    usuario.cargarDatosPersistidos(
+                            resultado.getBoolean("activo"),
+                            resultado.getDouble("calificacion_promedio"),
+                            resultado.getInt("cantidad_calificaciones")
+                    );
+
+                    if (usuario instanceof Conductor) {
+                        Conductor conductor = (Conductor) usuario;
+                        conductor.setDisponible(resultado.getBoolean("disponible"));
+                    }
+
+                    return usuario;
+                }
+
+                throw new ElementoNoEncontradoException(
+                        "No se encontró un usuario con el ID: " + id
+                );
+            }
+
+        } catch (SQLException e) {
+            throw new AccesoDatosException(
+                    "Error al buscar el usuario en la base de datos", e
+            );
+        }
+    }
+
+    public Usuario buscarPorEmail(String email) {
+
+        String sql = "SELECT * FROM usuarios WHERE email = ?";
+
+        try (Connection conexion = ConexionDB.obtenerConexion();
+             PreparedStatement ps = conexion.prepareStatement(sql)) {
+
+            ps.setString(1, email);
+
+            try (ResultSet resultado = ps.executeQuery()) {
+
+                if (resultado.next()) {
+
+                    TipoUsuario tipo = TipoUsuario.valueOf(
+                            resultado.getString("tipo_usuario")
+                    );
+
+                    Usuario usuario;
+
+                    switch (tipo) {
+                        case CLIENTE:
+                            usuario = new Cliente(
+                                    resultado.getString("nombre"),
+                                    resultado.getString("apellido"),
+                                    resultado.getString("dni"),
+                                    resultado.getString("email"),
+                                    resultado.getString("telefono"),
+                                    resultado.getString("password")
+                            );
+                            break;
+
+                        case ADMINISTRADOR:
+                            usuario = new Administrador(
+                                    resultado.getString("nombre"),
+                                    resultado.getString("apellido"),
+                                    resultado.getString("dni"),
+                                    resultado.getString("email"),
+                                    resultado.getString("telefono"),
+                                    resultado.getString("password")
+                            );
+                            break;
+
+                        case CONDUCTOR:
+                            usuario = new Conductor(
+                                    resultado.getString("nombre"),
+                                    resultado.getString("apellido"),
+                                    resultado.getString("dni"),
+                                    resultado.getString("email"),
+                                    resultado.getString("telefono"),
+                                    resultado.getString("password"),
+                                    resultado.getString("numero_licencia"));
+
+                            break;
+
+                        default:
+                            throw new AccesoDatosException(
+                                    "El tipo de usuario todavía no está implementado."
+                            );
+                    }
+
+                    usuario.asignarIdUsuario(
+                            resultado.getInt("id_usuario")
+                    );
+
+                    usuario.cargarDatosPersistidos(
+                            resultado.getBoolean("activo"),
+                            resultado.getDouble("calificacion_promedio"),
+                            resultado.getInt("cantidad_calificaciones")
+                    );
+
+                    if (usuario instanceof Conductor) {
+                        Conductor conductor = (Conductor) usuario;
+
+                        conductor.setDisponible(resultado.getBoolean("disponible"));
+
+                        int idVehiculo = resultado.getInt("id_vehiculo_seleccionado");
+
+                        if (!resultado.wasNull()) {
+                            conductor.setIdVehiculoSeleccionadoPersistido(idVehiculo);
+                        }
+                    }
+
+                    return usuario;
+                }
+
+                return null;
+
+            }
+
+        } catch (SQLException e) {
+            throw new AccesoDatosException(
+                    "Error al buscar el usuario por email.", e
+            );
+        }
+    }
+
+    public boolean actualizarDisponibilidad(int idConductor, boolean disponible)
+            throws SQLException {
+
+        String sql = "UPDATE usuarios SET disponible = ? " +
+                "WHERE id_usuario = ? AND tipo_usuario = 'CONDUCTOR'";
+
+        try (Connection conexion = ConexionDB.obtenerConexion();
+             PreparedStatement ps = conexion.prepareStatement(sql)) {
+
+            ps.setBoolean(1, disponible);
+            ps.setInt(2, idConductor);
+
+            int filasActualizadas = ps.executeUpdate();
+
+            return filasActualizadas > 0;
+
+        } catch (SQLException e) {
+            throw new AccesoDatosException(
+                    "Error al actualizar la disponibilidad del conductor", e
+            );
+        }
+    }
+
+    public boolean actualizarVehiculoSeleccionado(
+            int idConductor, int idVehiculo) throws SQLException {
+
+        String sql = "UPDATE usuarios SET id_vehiculo_seleccionado = ? " +
+                "WHERE id_usuario = ? AND tipo_usuario = 'CONDUCTOR'";
+
+        try (Connection conexion = ConexionDB.obtenerConexion();
+             PreparedStatement ps = conexion.prepareStatement(sql)) {
+
+            ps.setInt(1, idVehiculo);
+            ps.setInt(2, idConductor);
+
+            int filasActualizadas = ps.executeUpdate();
+
+            return filasActualizadas > 0;
+
+        } catch (SQLException e) {
+            throw new AccesoDatosException(
+                    "Error al guardar el vehículo seleccionado.", e
+            );
+        }
+    }
+
+    @Override
+    public boolean desactivar(int id) throws SQLException {
+
+        String sql = "UPDATE usuarios SET activo = false " +
+                "WHERE id_usuario = ? AND activo = true";
+
+        try (Connection conexion = ConexionDB.obtenerConexion();
+             PreparedStatement ps = conexion.prepareStatement(sql)) {
+
+            ps.setInt(1, id);
+
+            int filasActualizadas = ps.executeUpdate();
+
+            return filasActualizadas > 0;
+
+        } catch (SQLException e) {
+            throw new AccesoDatosException(
+                    "Error al desactivar el usuario en la base de datos", e
+            );
+        }
+    }
+
+    @Override
+    public boolean activar(int id) throws SQLException {
+
+        String sql = "UPDATE usuarios SET activo = true " +
+                "WHERE id_usuario = ? AND activo = false";
+
+        try (Connection conexion = ConexionDB.obtenerConexion();
+             PreparedStatement ps = conexion.prepareStatement(sql)) {
+
+            ps.setInt(1, id);
+
+            int filasActualizadas = ps.executeUpdate();
+
+            return filasActualizadas > 0;
+
+        } catch (SQLException e) {
+            throw new AccesoDatosException(
+                    "Error al activar el usuario en la base de datos", e
+            );
+        }
+    }
+
+    @Override
+    public boolean actualizar(Usuario usuario) throws SQLException {
+
+        String sql = "UPDATE usuarios SET nombre = ?, apellido = ?, " +
+                "dni = ?, email = ?, telefono = ?, password = ? " +
+                "WHERE id_usuario = ?";
+
+        try (Connection conexion = ConexionDB.obtenerConexion();
+             PreparedStatement ps = conexion.prepareStatement(sql)) {
+
+            ps.setString(1, usuario.getNombre());
+            ps.setString(2, usuario.getApellido());
+            ps.setString(3, usuario.getDni());
+            ps.setString(4, usuario.getEmail());
+            ps.setString(5, usuario.getTelefono());
+            ps.setString(6, usuario.getPassword());
+            ps.setInt(7, usuario.getIdUsuario());
+
+            int filasActualizadas = ps.executeUpdate();
+
+            return filasActualizadas > 0;
+
+        } catch (SQLException e) {
+
+            if (e.getErrorCode() == 1062) {
+                throw new AccesoDatosException(
+                        "El DNI o el email ya pertenecen a otro usuario", e
+                );
+            }
+
+            throw new AccesoDatosException(
+                    "Error al actualizar el usuario en la base de datos", e
+            );
+        }
+    }
+
+
+}
